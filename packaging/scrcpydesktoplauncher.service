@@ -1,0 +1,16 @@
+[Unit]
+Description=Android Launcher - adb watcher and launcher sync
+Documentation=https://github.com/
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/scrcpydesktoplauncher daemon
+Restart=on-failure
+RestartSec=3
+# dconf/gsettings needs the session bus for GNOME app-folders
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=%t/bus
+
+[Install]
+WantedBy=graphical-session.target

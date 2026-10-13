@@ -1,0 +1,9 @@
+build/bin/
+build/appimage/
+build/*.AppImage
+build/scrcpy-*/
+build/scrcpy-*.tar.gz
+squashfs-root/
+frontend/dist/
+frontend/node_modules/
+helper/out/
