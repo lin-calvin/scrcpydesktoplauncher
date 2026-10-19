@@ -45,7 +45,7 @@ if [ "${STATIC:-0}" = "1" ]; then
 	patched="$SRC/release/work/build-linux-x86_64/dist/scrcpy"
 else
 	rm -rf "$SRC/build"
-	( cd "$SRC" && meson setup build --buildtype=release -Dcompile_server=false >/dev/null
+	( cd "$SRC" && meson setup build --buildtype=release -Dcompile_server=false -Dportable=true >/dev/null
 	  ninja -C build >/dev/null )
 	patched="$SRC/build/app/scrcpy"
 fi
