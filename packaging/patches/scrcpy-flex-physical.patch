@@ -1,0 +1,156 @@
+diff --git a/app/src/screen.c b/app/src/screen.c
+index fec823e..1b61302 100644
+--- a/app/src/screen.c
++++ b/app/src/screen.c
+@@ -1,6 +1,7 @@
+ #include "screen.h"
+ 
+ #include <assert.h>
++#include <stdlib.h>
+ #include <string.h>
+ #include <SDL3/SDL.h>
+ 
+@@ -358,6 +359,38 @@ sc_screen_request_resize_display(struct sc_screen *screen, uint16_t width,
+     sc_controller_resize_display(screen->controller, width, height);
+ }
+ 
++// When SCRCPY_FLEX_PHYSICAL is set, the flex display is sized in physical
++// pixels instead of logical pixels, so that the video is rendered 1:1 on HiDPI
++// screens (no compositor upscaling => no blur).
++static bool
++sc_screen_flex_physical(void) {
++    static int enabled = -1;
++    if (enabled < 0) {
++        const char *v = getenv("SCRCPY_FLEX_PHYSICAL");
++        enabled = v && *v && strcmp(v, "0") != 0;
++    }
++    return enabled;
++}
++
++static void
++sc_screen_flex_resize(struct sc_screen *screen, uint16_t width, uint16_t height) {
++    struct sc_resize_tracker *tracker = &screen->resize_tracker;
++    if (tracker->time
++            && sc_tick_now() >= tracker->time + SC_TICK_FROM_MS(3000)) {
++        // Remove obsolete request
++        tracker->time = 0;
++    }
++    if (tracker->time && tracker->size.width == width
++                      && tracker->size.height == height) {
++        // This resize event is the result of a previous (recent) resize
++        // request triggered by a change in the frame's dimensions.
++        LOGV("Ignore local resize: %" PRIu16 "x%" PRIu16, width, height);
++        tracker->time = 0;
++    } else {
++        sc_screen_request_resize_display(screen, width, height);
++    }
++}
++
+ static void
+ sc_screen_on_resize(struct sc_screen *screen, const SDL_WindowEvent *event) {
+     // This event can be triggered before the window is shown
+@@ -367,30 +400,20 @@ sc_screen_on_resize(struct sc_screen *screen, const SDL_WindowEvent *event) {
+ 
+     if (event->type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
+         sc_screen_render(screen, true);
++        if (screen->flex_display && sc_screen_flex_physical()) {
++            // data1/data2 are physical pixels for this event
++            assert(!(event->data1 & ~0xFFFF));
++            assert(!(event->data2 & ~0xFFFF));
++            sc_screen_flex_resize(screen, (uint16_t) event->data1,
++                                          (uint16_t) event->data2);
++        }
+     } else {
+         assert(event->type == SDL_EVENT_WINDOW_RESIZED);
+-        if (screen->flex_display) {
++        if (screen->flex_display && !sc_screen_flex_physical()) {
+             assert(!(event->data1 & ~0xFFFF));
+             assert(!(event->data2 & ~0xFFFF));
+-            uint16_t width = event->data1;
+-            uint16_t height = event->data2;
+-
+-            struct sc_resize_tracker *tracker = &screen->resize_tracker;
+-            if (tracker->time
+-                    && sc_tick_now() >= tracker->time + SC_TICK_FROM_MS(3000)) {
+-                // Remove obsolete request
+-                tracker->time = 0;
+-            }
+-            if (tracker->time && tracker->size.width == width
+-                              && tracker->size.height == height) {
+-                // This resize event is the result of a previous (recent) resize
+-                // request triggered by a change in the frame's dimensions.
+-                LOGV("Ignore local resize: %" PRIu16 "x%" PRIu16,
+-                     width, height);
+-                tracker->time = 0;
+-            } else {
+-                sc_screen_request_resize_display(screen, width, height);
+-            }
++            sc_screen_flex_resize(screen, (uint16_t) event->data1,
++                                          (uint16_t) event->data2);
+         }
+     }
+ }
+@@ -780,13 +803,25 @@ sc_screen_show_initial_window(struct sc_screen *screen) {
+         .y = y,
+     };
+ 
++    struct sc_size initial_content = screen->content_size;
++    if (screen->flex_display && sc_screen_flex_physical()) {
++        // content_size is in physical pixels, the window size in logical pixels
++        float scale = SDL_GetWindowPixelDensity(screen->window);
++        if (scale > 0 && scale != 1.0f) {
++            initial_content.width =
++                (uint32_t) (initial_content.width / scale + 0.5f);
++            initial_content.height =
++                (uint32_t) (initial_content.height / scale + 0.5f);
++        }
++    }
++
+     struct sc_size window_size =
+-        get_initial_optimal_size(screen->content_size, screen->req.width,
+-                                                       screen->req.height);
++        get_initial_optimal_size(initial_content, screen->req.width,
++                                                  screen->req.height);
+ 
+     if (screen->flex_display
+-            && window_size.width == screen->content_size.width
+-            && window_size.height == screen->content_size.height) {
++            && window_size.width == initial_content.width
++            && window_size.height == initial_content.height) {
+         // Avoid sending an unnecessary initial "resize display" request to the
+         // server if the size has not changed.
+         sc_screen_track_resize(screen, window_size);
+@@ -887,6 +922,13 @@ resize_for_content(struct sc_screen *screen, struct sc_size old_content_size,
+                           / old_content_size.width;
+         target_size.height = (uint32_t) window_size.height * target_size.height
+                            / old_content_size.height;
++    } else if (sc_screen_flex_physical()) {
++        // content_size is in physical pixels, the window size in logical pixels
++        float scale = SDL_GetWindowPixelDensity(screen->window);
++        if (scale > 0 && scale != 1.0f) {
++            target_size.width = (uint32_t) (target_size.width / scale + 0.5f);
++            target_size.height = (uint32_t) (target_size.height / scale + 0.5f);
++        }
+     }
+     target_size = get_optimal_size(target_size, new_content_size, true);
+     assert(is_windowed(screen));
+@@ -904,7 +946,18 @@ set_content_size(struct sc_screen *screen, struct sc_size new_content_size,
+             resize_for_content(screen, screen->content_size, new_content_size);
+         } else if (screen->flex_display) {
+             // Force a display resize, the client cannot resize in fullscreen
+-            struct sc_size size = sc_sdl_get_window_size(screen->window);
++            struct sc_size size;
++            if (sc_screen_flex_physical()) {
++                int w, h;
++                if (!SDL_GetWindowSizeInPixels(screen->window, &w, &h)) {
++                    w = 0;
++                    h = 0;
++                }
++                size.width = (uint16_t) w;
++                size.height = (uint16_t) h;
++            } else {
++                size = sc_sdl_get_window_size(screen->window);
++            }
+             sc_screen_request_resize_display(screen, size.width, size.height);
+         } else if (!screen->resize_pending) {
+             // Store the windowed size to be able to compute the optimal size

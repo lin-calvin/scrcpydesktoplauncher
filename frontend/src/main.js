@@ -20,9 +20,9 @@ async function api(name, ...args) {
 
 function defaults() {
   return {
-    folder_name: 'Android', scope: 'launchable', include: [], exclude: [],
+    folder_name: 'Android', name_postfix: '', scope: 'launchable', include: [], exclude: [],
     prefer_transport: 'auto', audio: true, device: 'auto', settings_entry: true,
-    scrcpy: { size: '', dpi: '', flex_display: true, no_vd_decorations: false, keep_content_on_close: false },
+    scrcpy: { size: '', dpi: '', bit_rate: '', hidpi_scale: 1, flex_display: true, no_vd_decorations: false, keep_content_on_close: false },
   };
 }
 
@@ -40,6 +40,9 @@ $('#app').innerHTML = `
     <div class="pane-left">
       <div class="section-title">Launcher</div>
       <md-outlined-text-field id="folder" label="Folder name"></md-outlined-text-field>
+      <md-outlined-text-field id="postfix" label="Name postfix"
+        placeholder="e.g. ({deviceid})"
+        supporting-text="placeholders: {serial} {deviceid}"></md-outlined-text-field>
       <div class="row"><label>Settings entry in folder</label><md-switch id="settings-entry"></md-switch></div>
 
       <div class="section-title">Device</div>
@@ -55,6 +58,13 @@ $('#app').innerHTML = `
         <md-outlined-text-field id="size" label="Size WxH"></md-outlined-text-field>
         <md-outlined-text-field id="dpi" label="DPI"></md-outlined-text-field>
       </div>
+      <md-outlined-text-field id="bitrate" label="Video bitrate"
+        placeholder="e.g. 16M" supporting-text="scrcpy default is 8M"></md-outlined-text-field>
+      <md-outlined-select id="hidpi" label="HiDPI render scale">
+        <md-select-option value="1"><div slot="headline">1x (flex, sharp on 100%)</div></md-select-option>
+        <md-select-option value="1.5"><div slot="headline">1.5x (physical pixels)</div></md-select-option>
+        <md-select-option value="2"><div slot="headline">2x (physical pixels, fixes blur)</div></md-select-option>
+      </md-outlined-select>
       <div class="row"><label>Flex display (fit window)</label><md-switch id="flex"></md-switch></div>
       <div class="row"><label>Hide system decorations</label><md-switch id="decor"></md-switch></div>
       <div class="row"><label>Keep app when closed</label><md-switch id="keep"></md-switch></div>
@@ -103,11 +113,14 @@ function toast(msg, err) {
 // ---------- config <-> form ----------
 function fillForm(c) {
   $('#folder').value = c.folder_name || 'Android';
+  $('#postfix').value = c.name_postfix || '';
   $('#settings-entry').selected = !!c.settings_entry;
   $('#transport').value = c.prefer_transport || 'auto';
   $('#audio').selected = !!c.audio;
   $('#size').value = c.scrcpy?.size || '';
   $('#dpi').value = c.scrcpy?.dpi || '';
+  $('#bitrate').value = c.scrcpy?.bit_rate || '';
+  $('#hidpi').value = String(c.scrcpy?.hidpi_scale || 1);
   $('#flex').selected = !!c.scrcpy?.flex_display;
   $('#decor').selected = !!c.scrcpy?.no_vd_decorations;
   $('#keep').selected = !!c.scrcpy?.keep_content_on_close;
@@ -129,6 +142,7 @@ function collect() {
   }
   return {
     folder_name: $('#folder').value || 'Android',
+    name_postfix: $('#postfix').value || '',
     scope,
     include,
     exclude,
@@ -139,6 +153,8 @@ function collect() {
     scrcpy: {
       size: ($('#size').value || '').trim(),
       dpi: ($('#dpi').value || '').trim(),
+      bit_rate: ($('#bitrate').value || '').trim(),
+      hidpi_scale: parseFloat($('#hidpi').value) || 1,
       flex_display: $('#flex').selected,
       no_vd_decorations: $('#decor').selected,
       keep_content_on_close: $('#keep').selected,

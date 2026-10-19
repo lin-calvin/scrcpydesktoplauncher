@@ -2,6 +2,7 @@ package reconcile
 
 import (
 	"sort"
+	"strings"
 
 	"scrcpydesktoplauncher/internal/adb"
 	"scrcpydesktoplauncher/internal/config"
@@ -82,7 +83,8 @@ func Run(cfg config.Config) (Result, error) {
 	for _, a := range selected {
 		desiredSet[a.Package] = true
 		icon := iconsDir + "/" + a.Icon
-		if err := desktop.Install(a.Package, a.Label, icon, execBin); err != nil {
+		label := ApplyNamePostfix(cfg.NamePostfix, a.Label, serial)
+		if err := desktop.Install(a.Package, label, icon, execBin); err != nil {
 			return res, err
 		}
 		if have[a.Package] {
@@ -159,6 +161,17 @@ func Clean(keepFolder bool) error {
 		return gnome.RemoveFolder(xdg.FolderID)
 	}
 	return nil
+}
+
+// ApplyNamePostfix appends a rendered postfix (e.g. " ({deviceid})") to an app
+// label. Placeholders {serial} and {deviceid} are replaced with the device
+// serial. An empty postfix returns the label unchanged.
+func ApplyNamePostfix(postfix, label, serial string) string {
+	if postfix == "" {
+		return label
+	}
+	r := strings.NewReplacer("{serial}", serial, "{deviceid}", serial)
+	return label + r.Replace(postfix)
 }
 
 func toSet(list []string) map[string]bool {

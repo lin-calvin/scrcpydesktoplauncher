@@ -10,16 +10,19 @@ const AppName = "scrcpydesktoplauncher"
 
 // ScrcpyOptions holds the per-launch scrcpy settings.
 type ScrcpyOptions struct {
-	Size               string `json:"size"` // "" or "WxH"
-	DPI                string `json:"dpi"`  // "" or number
-	FlexDisplay        bool   `json:"flex_display"`
-	NoVDDecorations    bool   `json:"no_vd_decorations"`
-	KeepContentOnClose bool   `json:"keep_content_on_close"`
+	Size               string  `json:"size"`        // "" or "WxH" (logical base size when hidpi_scale > 1)
+	DPI                string  `json:"dpi"`         // "" or number
+	BitRate            string  `json:"bit_rate"`    // "" or e.g. "16M", "8000000"
+	HiDPIScale         float64 `json:"hidpi_scale"` // 1 = normal; >1 renders at physical pixels (disables flex)
+	FlexDisplay        bool    `json:"flex_display"`
+	NoVDDecorations    bool    `json:"no_vd_decorations"`
+	KeepContentOnClose bool    `json:"keep_content_on_close"`
 }
 
 // Config is the persisted user configuration.
 type Config struct {
 	FolderName      string        `json:"folder_name"`
+	NamePostfix     string        `json:"name_postfix"`     // e.g. " ({deviceid})"; {serial}/{deviceid} are substituted
 	Scope           string        `json:"scope"`            // launchable | third_party
 	Include         []string      `json:"include"`          // extra packages to force-include
 	Exclude         []string      `json:"exclude"`          // packages to drop
@@ -40,6 +43,7 @@ func Default() Config {
 		Device:          "auto",
 		SettingsEntry:   true,
 		Scrcpy: ScrcpyOptions{
+			HiDPIScale:         1,
 			FlexDisplay:        true,
 			KeepContentOnClose: false,
 		},

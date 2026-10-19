@@ -45,11 +45,15 @@ func TestBuildArgsAudioOffAndSize(t *testing.T) {
 	cfg.Scrcpy.KeepContentOnClose = true
 	cfg.Scrcpy.Size = "1080x1920"
 	cfg.Scrcpy.DPI = "420"
+	cfg.Scrcpy.BitRate = "16M"
 	cfg.Scrcpy.FlexDisplay = false
 
 	args := BuildArgs(cfg, "", "pkg", "Pkg Name")
 	if !has(args, "--no-audio") {
 		t.Errorf("expected --no-audio: %v", args)
+	}
+	if !has(args, "--video-bit-rate=16M") {
+		t.Errorf("expected video bitrate: %v", args)
 	}
 	if !has(args, "--no-vd-destroy-content") {
 		t.Errorf("expected keep-content flag when enabled: %v", args)
@@ -65,5 +69,23 @@ func TestBuildArgsAudioOffAndSize(t *testing.T) {
 	}
 	if has(args, "-s") {
 		t.Errorf("no serial expected: %v", args)
+	}
+}
+
+func TestBuildArgsHiDPIScale(t *testing.T) {
+	cfg := config.Default()
+	cfg.Scrcpy.HiDPIScale = 2
+	cfg.Scrcpy.Size = "640x480"
+	cfg.Scrcpy.FlexDisplay = true // must be suppressed in physical mode
+
+	args := BuildArgs(cfg, "", "pkg", "")
+	if !has(args, "--new-display=1280x960") {
+		t.Errorf("expected physical display size: %v", args)
+	}
+	if !has(args, "--window-width=640") || !has(args, "--window-height=480") {
+		t.Errorf("expected logical window size: %v", args)
+	}
+	if !has(args, "--flex-display") {
+		t.Errorf("flex must stay enabled (patched physical mode): %v", args)
 	}
 }

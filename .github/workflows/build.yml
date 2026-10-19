@@ -20,9 +20,40 @@ jobs:
           go vet ./internal/...
           go test ./internal/...
 
+  # Build scrcpy from source with the physical-pixel flex patch applied.
+  scrcpy:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependencies (static scrcpy build)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build nasm pkg-config git curl \
+            ffmpeg libavcodec-dev libavdevice-dev libavformat-dev libavutil-dev \
+            libswresample-dev libusb-1.0-0 libusb-1.0-0-dev libv4l-dev \
+            libasound2-dev libpulse-dev libaudio-dev libfribidi-dev libjack-dev \
+            libsndio-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
+            libxfixes-dev libxi-dev libxss-dev libxtst-dev libxkbcommon-dev \
+            libdrm-dev libva-dev libgbm-dev libgl1-mesa-dev libgles2-mesa-dev \
+            libegl1-mesa-dev libdbus-1-dev libibus-1.0-dev libudev-dev libthai-dev \
+            libpipewire-0.3-dev libwayland-dev libdecor-0-dev liburing-dev
+
+      - name: Build patched scrcpy (static)
+        run: STATIC=1 ./packaging/build-scrcpy.sh
+
+      - name: Package
+        run: tar czf scrcpy-patched.tar.gz -C build scrcpy-patched
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scrcpy-patched
+          path: scrcpy-patched.tar.gz
+          if-no-files-found: error
+
   appimage:
     runs-on: ubuntu-22.04
-    needs: test
+    needs: [test, scrcpy]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -48,8 +79,15 @@ jobs:
           chmod +x appimagetool
           sudo mv appimagetool /usr/local/bin/appimagetool
 
-      - name: Build AppImage (bundles scrcpy)
-        run: ./packaging/build-appimage.sh
+      - uses: actions/download-artifact@v4
+        with:
+          name: scrcpy-patched
+
+      - name: Unpack patched scrcpy
+        run: tar xzf scrcpy-patched.tar.gz -C build
+
+      - name: Build AppImage (bundles patched scrcpy)
+        run: SCRCPY_DIR="$PWD/build/scrcpy-patched" ./packaging/build-appimage.sh
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

@@ -1,9 +1,13 @@
 package scrcpy
 
 import (
+	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"scrcpydesktoplauncher/internal/config"
 )
@@ -22,19 +26,54 @@ func binary() string {
 
 // BuildArgs assembles the scrcpy command line for launching one Android app on
 // a new virtual display. title sets the window title (empty = scrcpy default).
+//
+// HiDPI: scrcpy's window is DPI-aware, so by default --flex-display sizes the
+// virtual display in *logical* pixels and the compositor upscales the video
+// (blurry at 200%). When HiDPIScale > 1 we create the display at physical
+// pixels, pin the window to the logical base size, and set
+// SCRCPY_FLEX_PHYSICAL=1 so a patched scrcpy resizes the display from the
+// window's physical pixel size (see packaging/patches/).
 func BuildArgs(cfg config.Config, serial, pkg, title string) []string {
-	nd := "--new-display"
-	switch {
-	case cfg.Scrcpy.Size != "" && cfg.Scrcpy.DPI != "":
-		nd = "--new-display=" + cfg.Scrcpy.Size + "/" + cfg.Scrcpy.DPI
-	case cfg.Scrcpy.Size != "":
-		nd = "--new-display=" + cfg.Scrcpy.Size
-	case cfg.Scrcpy.DPI != "":
-		nd = "--new-display=/" + cfg.Scrcpy.DPI
+	scale := cfg.Scrcpy.HiDPIScale
+	if scale <= 0 {
+		scale = 1
+	}
+
+	baseW, baseH := parseSize(cfg.Scrcpy.Size)
+	if baseW == 0 || baseH == 0 {
+		baseW, baseH = 1280, 960 // scrcpy default new-display size
+	}
+
+	flex := cfg.Scrcpy.FlexDisplay
+	var nd string
+	if scale > 1 {
+		nd = fmt.Sprintf("--new-display=%dx%d",
+			int(math.Round(float64(baseW)*scale)),
+			int(math.Round(float64(baseH)*scale)))
+		if cfg.Scrcpy.DPI != "" {
+			nd += "/" + cfg.Scrcpy.DPI
+		}
+	} else {
+		nd = "--new-display"
+		switch {
+		case cfg.Scrcpy.Size != "" && cfg.Scrcpy.DPI != "":
+			nd = "--new-display=" + cfg.Scrcpy.Size + "/" + cfg.Scrcpy.DPI
+		case cfg.Scrcpy.Size != "":
+			nd = "--new-display=" + cfg.Scrcpy.Size
+		case cfg.Scrcpy.DPI != "":
+			nd = "--new-display=/" + cfg.Scrcpy.DPI
+		}
 	}
 	args := []string{nd}
 
-	if cfg.Scrcpy.FlexDisplay {
+	if scale > 1 {
+		// The window stays at the logical size; its physical drawable is
+		// scale× larger, matching the virtual display 1:1.
+		args = append(args,
+			fmt.Sprintf("--window-width=%d", baseW),
+			fmt.Sprintf("--window-height=%d", baseH))
+	}
+	if flex {
 		args = append(args, "--flex-display")
 	}
 	if cfg.Scrcpy.NoVDDecorations {
@@ -46,6 +85,9 @@ func BuildArgs(cfg config.Config, serial, pkg, title string) []string {
 	if !cfg.Audio {
 		args = append(args, "--no-audio")
 	}
+	if cfg.Scrcpy.BitRate != "" {
+		args = append(args, "--video-bit-rate="+cfg.Scrcpy.BitRate)
+	}
 	if title != "" {
 		args = append(args, "--window-title="+title)
 	}
@@ -55,6 +97,23 @@ func BuildArgs(cfg config.Config, serial, pkg, title string) []string {
 		args = append([]string{"-s", serial}, args...)
 	}
 	return args
+}
+
+// parseSize parses "WxH" into integers, returning zeros when absent/invalid.
+func parseSize(s string) (int, int) {
+	if s == "" {
+		return 0, 0
+	}
+	parts := strings.SplitN(strings.ToLower(s), "x", 2)
+	if len(parts) != 2 {
+		return 0, 0
+	}
+	w, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
+	h, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if err1 != nil || err2 != nil || w <= 0 || h <= 0 {
+		return 0, 0
+	}
+	return w, h
 }
 
 // Launch runs scrcpy for the given package and blocks until it exits.
@@ -72,6 +131,10 @@ func Launch(cfg config.Config, serial, pkg, title, appID string) error {
 	// makes SDL log "Could not set app name" and mis-associates the window.
 	if appID != "" {
 		cmd.Env = append(cmd.Env, "SDL_APP_ID="+appID)
+	}
+	// Ask the patched scrcpy to resize flex displays using physical pixels.
+	if cfg.Scrcpy.HiDPIScale > 1 {
+		cmd.Env = append(cmd.Env, "SCRCPY_FLEX_PHYSICAL=1")
 	}
 	return cmd.Run()
 }

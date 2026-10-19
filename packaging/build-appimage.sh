@@ -20,9 +20,9 @@ export APPIMAGE_EXTRACT_AND_RUN=1
 
 [ -x "$root/build/bin/$APP" ] || { echo "building wails app…"; ( cd "$root" && wails build ); }
 
-# --- locate scrcpy ---
-scrcpy_dir="${SCRCPY_DIR:-}"
-if [ -z "$scrcpy_dir" ]; then
+# --- locate scrcpy (prefer a patched build, fall back to the official tarball) ---
+scrcpy_dir="${SCRCPY_DIR:-$root/build/scrcpy-patched}"
+if [ ! -x "$scrcpy_dir/scrcpy" ]; then
 	scrcpy_dir="$root/build/scrcpy-linux-x86_64-$SCRCPY_VERSION"
 	if [ ! -x "$scrcpy_dir/scrcpy" ]; then
 		url="https://github.com/Genymobile/scrcpy/releases/download/$SCRCPY_VERSION/scrcpy-linux-x86_64-$SCRCPY_VERSION.tar.gz"

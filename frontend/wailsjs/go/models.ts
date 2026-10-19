@@ -3,6 +3,8 @@ export namespace config {
 	export class ScrcpyOptions {
 	    size: string;
 	    dpi: string;
+	    bit_rate: string;
+	    hidpi_scale: number;
 	    flex_display: boolean;
 	    no_vd_decorations: boolean;
 	    keep_content_on_close: boolean;
@@ -15,6 +17,8 @@ export namespace config {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.size = source["size"];
 	        this.dpi = source["dpi"];
+	        this.bit_rate = source["bit_rate"];
+	        this.hidpi_scale = source["hidpi_scale"];
 	        this.flex_display = source["flex_display"];
 	        this.no_vd_decorations = source["no_vd_decorations"];
 	        this.keep_content_on_close = source["keep_content_on_close"];
@@ -22,6 +26,7 @@ export namespace config {
 	}
 	export class Config {
 	    folder_name: string;
+	    name_postfix: string;
 	    scope: string;
 	    include: string[];
 	    exclude: string[];
@@ -38,6 +43,7 @@ export namespace config {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.folder_name = source["folder_name"];
+	        this.name_postfix = source["name_postfix"];
 	        this.scope = source["scope"];
 	        this.include = source["include"];
 	        this.exclude = source["exclude"];
