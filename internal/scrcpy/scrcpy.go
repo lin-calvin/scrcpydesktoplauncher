@@ -33,11 +33,23 @@ func binary() string {
 // pixels, pin the window to the logical base size, and set
 // SCRCPY_FLEX_PHYSICAL=1 so a patched scrcpy resizes the display from the
 // window's physical pixel size (see packaging/patches/).
+// hasPatchedScrcpy reports whether a scrcpy binary sits next to ours (i.e. the
+// AppImage bundles the patched client). Overridable in tests.
+var hasPatchedScrcpy = func() bool {
+	exe, err := os.Executable()
+	if err != nil {
+		return false
+	}
+	fi, err := os.Stat(filepath.Join(filepath.Dir(exe), "scrcpy"))
+	return err == nil && !fi.IsDir()
+}
+
 func BuildArgs(cfg config.Config, serial, pkg, title string) []string {
 	scale := cfg.Scrcpy.HiDPIScale
 	if scale <= 0 {
 		scale = 1
 	}
+	physical := scale > 1 && hasPatchedScrcpy()
 
 	baseW, baseH := parseSize(cfg.Scrcpy.Size)
 	if baseW == 0 || baseH == 0 {
@@ -47,6 +59,11 @@ func BuildArgs(cfg config.Config, serial, pkg, title string) []string {
 	flex := cfg.Scrcpy.FlexDisplay
 	var nd string
 	if scale > 1 {
+		if !physical {
+			// Unpatched scrcpy: flex would override the physical size, so pin
+			// a fixed display and let the window scale it down to logical size.
+			flex = false
+		}
 		nd = fmt.Sprintf("--new-display=%dx%d",
 			int(math.Round(float64(baseW)*scale)),
 			int(math.Round(float64(baseH)*scale)))
@@ -66,9 +83,9 @@ func BuildArgs(cfg config.Config, serial, pkg, title string) []string {
 	}
 	args := []string{nd}
 
-	if scale > 1 {
-		// The window stays at the logical size; its physical drawable is
-		// scale× larger, matching the virtual display 1:1.
+	if scale > 1 && !physical {
+		// Only valid without flex: keep the window at the logical size so the
+		// physical video is downscaled to it.
 		args = append(args,
 			fmt.Sprintf("--window-width=%d", baseW),
 			fmt.Sprintf("--window-height=%d", baseH))
@@ -133,7 +150,7 @@ func Launch(cfg config.Config, serial, pkg, title, appID string) error {
 		cmd.Env = append(cmd.Env, "SDL_APP_ID="+appID)
 	}
 	// Ask the patched scrcpy to resize flex displays using physical pixels.
-	if cfg.Scrcpy.HiDPIScale > 1 {
+	if cfg.Scrcpy.HiDPIScale > 1 && hasPatchedScrcpy() {
 		cmd.Env = append(cmd.Env, "SCRCPY_FLEX_PHYSICAL=1")
 	}
 	return cmd.Run()

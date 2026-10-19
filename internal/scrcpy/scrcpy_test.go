@@ -72,20 +72,47 @@ func TestBuildArgsAudioOffAndSize(t *testing.T) {
 	}
 }
 
-func TestBuildArgsHiDPIScale(t *testing.T) {
+func TestBuildArgsHiDPIScalePatched(t *testing.T) {
+	old := hasPatchedScrcpy
+	hasPatchedScrcpy = func() bool { return true }
+	defer func() { hasPatchedScrcpy = old }()
+
 	cfg := config.Default()
 	cfg.Scrcpy.HiDPIScale = 2
 	cfg.Scrcpy.Size = "640x480"
-	cfg.Scrcpy.FlexDisplay = true // must be suppressed in physical mode
+	cfg.Scrcpy.FlexDisplay = true
 
 	args := BuildArgs(cfg, "", "pkg", "")
 	if !has(args, "--new-display=1280x960") {
 		t.Errorf("expected physical display size: %v", args)
 	}
+	if !has(args, "--flex-display") {
+		t.Errorf("flex must stay enabled with patched scrcpy: %v", args)
+	}
+	// scrcpy rejects --window-width/height together with --flex-display
+	if has(args, "--window-width=640") || has(args, "--window-height=480") {
+		t.Errorf("window size must not be set with flex: %v", args)
+	}
+}
+
+func TestBuildArgsHiDPIUnpatched(t *testing.T) {
+	old := hasPatchedScrcpy
+	hasPatchedScrcpy = func() bool { return false }
+	defer func() { hasPatchedScrcpy = old }()
+
+	cfg := config.Default()
+	cfg.Scrcpy.HiDPIScale = 2
+	cfg.Scrcpy.Size = "640x480"
+	cfg.Scrcpy.FlexDisplay = true // suppressed: flex would override the size
+
+	args := BuildArgs(cfg, "", "pkg", "")
+	if !has(args, "--new-display=1280x960") {
+		t.Errorf("expected physical display size: %v", args)
+	}
+	if has(args, "--flex-display") {
+		t.Errorf("flex must be disabled without the patch: %v", args)
+	}
 	if !has(args, "--window-width=640") || !has(args, "--window-height=480") {
 		t.Errorf("expected logical window size: %v", args)
-	}
-	if !has(args, "--flex-display") {
-		t.Errorf("flex must stay enabled (patched physical mode): %v", args)
 	}
 }
